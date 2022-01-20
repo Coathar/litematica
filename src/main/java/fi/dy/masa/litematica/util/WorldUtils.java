@@ -16,8 +16,6 @@ import net.minecraft.block.Blocks;
 import net.minecraft.block.ComparatorBlock;
 import net.minecraft.block.RepeaterBlock;
 import net.minecraft.block.SlabBlock;
-import net.minecraft.block.StairsBlock;
-import net.minecraft.block.TrapdoorBlock;
 import net.minecraft.block.enums.BlockHalf;
 import net.minecraft.block.enums.ComparatorMode;
 import net.minecraft.block.enums.SlabType;
@@ -65,12 +63,14 @@ import fi.dy.masa.litematica.util.RayTraceUtils.RayTraceWrapper;
 import fi.dy.masa.litematica.util.RayTraceUtils.RayTraceWrapper.HitType;
 import fi.dy.masa.litematica.world.SchematicWorldHandler;
 import fi.dy.masa.litematica.world.WorldSchematic;
+import fi.dy.masa.malilib.gui.Message;
 import fi.dy.masa.malilib.gui.Message.MessageType;
 import fi.dy.masa.malilib.interfaces.IStringConsumer;
 import fi.dy.masa.malilib.util.FileUtils;
 import fi.dy.masa.malilib.util.InfoUtils;
 import fi.dy.masa.malilib.util.IntBoundingBox;
 import fi.dy.masa.malilib.util.LayerRange;
+import fi.dy.masa.malilib.util.MessageOutputType;
 import fi.dy.masa.malilib.util.StringUtils;
 import fi.dy.masa.malilib.util.SubChunkPos;
 
@@ -397,7 +397,17 @@ public class WorldUtils
 
             if (result == ActionResult.FAIL)
             {
-                InfoUtils.showGuiOrInGameMessage(MessageType.WARNING, "litematica.message.easy_place_fail");
+                MessageOutputType type = (MessageOutputType) Configs.Generic.PLACEMENT_RESTRICTION_WARN.getOptionListValue();
+
+                if (type == MessageOutputType.MESSAGE)
+                {
+                    InfoUtils.showGuiOrInGameMessage(Message.MessageType.WARNING, "litematica.message.easy_place_fail");
+                }
+                else if (type == MessageOutputType.ACTIONBAR)
+                {
+                    InfoUtils.printActionbarMessage("litematica.message.easy_place_fail");
+                }
+
                 return true;
             }
 
@@ -500,19 +510,20 @@ public class WorldUtils
                 }
 
                 Direction side = applyPlacementFacing(stateSchematic, sideOrig, stateClient);
+                EasyPlaceProtocol protocol = PlacementHandler.getEffectiveProtocolVersion();
 
-                if (Configs.Generic.EASY_PLACE_PROTOCOL.getOptionListValue() == EasyPlaceProtocol.V3)
+                if (protocol == EasyPlaceProtocol.V3)
                 {
                     hitPos = applyPlacementProtocolV3(pos, stateSchematic, hitPos);
                 }
-                else if (Configs.Generic.EASY_PLACE_PROTOCOL.getOptionListValue() == EasyPlaceProtocol.V2)
+                else if (protocol == EasyPlaceProtocol.V2)
                 {
-                    // Carpet Accurate Placement protocol support, plus BlockSlab support
+                    // Carpet Accurate Block Placement protocol support, plus slab support
                     hitPos = applyCarpetProtocolHitVec(pos, stateSchematic, hitPos);
                 }
-                else if (Configs.Generic.EASY_PLACE_PROTOCOL.getOptionListValue() == EasyPlaceProtocol.SLAB_ONLY)
+                else if (protocol == EasyPlaceProtocol.SLAB_ONLY)
                 {
-                    //BlockSlab support only
+                    // Slab support only
                     hitPos = applyBlockSlabProtocol(pos, stateSchematic, hitPos);
                 }
 
@@ -590,28 +601,32 @@ public class WorldUtils
         Block block = state.getBlock();
         Direction facing = fi.dy.masa.malilib.util.BlockUtils.getFirstPropertyFacingValue(state);
         final int propertyIncrement = 16;
-        double relX = hitVecIn.x - pos.getX();
+        boolean hasData = false;
+        int protocolValue = 0;
 
         if (facing != null)
         {
-            x = pos.getX() + relX + 2 + (facing.getId() * 2);
+            protocolValue = facing.getId();
+            hasData = true; // without this down rotation would not be detected >_>
+        }
+        else if (state.contains(Properties.AXIS))
+        {
+            Direction.Axis axis = state.get(Properties.AXIS);
+            protocolValue = axis.ordinal();
+            hasData = true; // without this id 0 would not be detected >_>
         }
 
         if (block instanceof RepeaterBlock)
         {
-            x += ((state.get(RepeaterBlock.DELAY)) - 1) * propertyIncrement;
-        }
-        else if (block instanceof TrapdoorBlock && state.get(TrapdoorBlock.HALF) == BlockHalf.TOP)
-        {
-            x += propertyIncrement;
+            protocolValue += state.get(RepeaterBlock.DELAY) * propertyIncrement;
         }
         else if (block instanceof ComparatorBlock && state.get(ComparatorBlock.MODE) == ComparatorMode.SUBTRACT)
         {
-            x += propertyIncrement;
+            protocolValue += propertyIncrement;
         }
-        else if (block instanceof StairsBlock && state.get(StairsBlock.HALF) == BlockHalf.TOP)
+        else if (state.contains(Properties.BLOCK_HALF) && state.get(Properties.BLOCK_HALF) == BlockHalf.TOP)
         {
-            x += propertyIncrement;
+            protocolValue += propertyIncrement;
         }
         else if (block instanceof SlabBlock && state.get(SlabBlock.TYPE) != SlabType.DOUBLE)
         {
@@ -619,6 +634,11 @@ public class WorldUtils
 
             // Do it via vanilla
             y = getBlockSlabY(pos, state);
+        }
+
+        if (protocolValue != 0 || hasData)
+        {
+            x += (protocolValue * 2) + 2;
         }
 
         return new Vec3d(x, y, z);
@@ -764,7 +784,16 @@ public class WorldUtils
 
         if (cancel)
         {
-            InfoUtils.showGuiOrInGameMessage(MessageType.WARNING, "litematica.message.placement_restriction_fail");
+            MessageOutputType type = (MessageOutputType) Configs.Generic.PLACEMENT_RESTRICTION_WARN.getOptionListValue();
+
+            if (type == MessageOutputType.MESSAGE)
+            {
+                InfoUtils.showGuiOrInGameMessage(Message.MessageType.WARNING, "litematica.message.placement_restriction_fail");
+            }
+            else if (type == MessageOutputType.ACTIONBAR)
+            {
+                InfoUtils.printActionbarMessage("litematica.message.placement_restriction_fail");
+            }
         }
 
         return cancel;
